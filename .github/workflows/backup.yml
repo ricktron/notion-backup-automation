@@ -1,0 +1,71 @@
+name: Notion Backup
+
+on:
+  # Schedule: Run every Monday at 2:00 AM UTC
+  schedule:
+    - cron: '0 2 * * 1'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      databases:
+        description: 'Databases to backup (all/captains_log/projects_tracker)'
+        required: false
+        default: 'all'
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run backup script
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          CAPTAINS_LOG_DB_ID: ${{ secrets.CAPTAINS_LOG_DB_ID }}
+          PROJECTS_TRACKER_DB_ID: ${{ secrets.PROJECTS_TRACKER_DB_ID }}
+        run: |
+          echo "Starting Notion backup..."
+          python backup_notion.py
+          echo "Backup completed!"
+      
+      - name: Upload backup artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notion-backups-${{ github.run_number }}-${{ github.run_attempt }}
+          path: backups/*.csv
+          retention-days: 90
+          if-no-files-found: warn
+      
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-logs-${{ github.run_number }}
+          path: backup.log
+          retention-days: 30
+          if-no-files-found: ignore
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Backup workflow failed! Check logs for details."
+          # Add your notification command here (e.g., curl to Slack webhook)
+          # Example:
+          # curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          #   -H 'Content-Type: application/json' \
+          #   -d '{"text":"❌ Notion backup failed on ${{ github.repository }}"}'
